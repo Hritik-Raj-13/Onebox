@@ -1,3 +1,13 @@
+/**
+ * Type definitions for node-imap v0.9.6
+ * Project: https://github.com/mscdex/node-imap
+ * 
+ * This file provides TypeScript type definitions for the node-imap package,
+ * which doesn't include its own types and has no @types package available.
+ * 
+ * Place all third-party type definitions in this @types directory.
+ */
+
 declare module 'node-imap' {
   import { EventEmitter } from 'events';
 
@@ -57,6 +67,9 @@ declare module 'node-imap' {
       callback: (error: Error | null, results: number[]) => void
     ): void;
     fetch(source: any, options: any): EventEmitter;
+    seq: {
+      fetch(source: any, options: any): EventEmitter;
+    };
   }
 
   export = Imap;
