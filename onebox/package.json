@@ -5,10 +5,10 @@
   "license": "ISC",
   "author": "Hritik Raj hritikraj.75100@gmail.com",
   "type": "module",
-  "main": "dist/src/imapClient.js",
+  "main": "dist/imapClient.js",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/src/imapClient.js",
+    "start": "node dist/imapClient.js",
     "dev": "tsx src/imapClient.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

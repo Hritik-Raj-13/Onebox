@@ -52,6 +52,11 @@ declare module 'node-imap' {
       callback: (error: Error | null, mailbox: Imap.Box) => void
     ): void;
     getBoxes(callback: (error: Error | null, boxes: Imap.MailBoxes) => void): void;
+    search(
+      criteria: any[],
+      callback: (error: Error | null, results: number[]) => void
+    ): void;
+    fetch(source: any, options: any): EventEmitter;
   }
 
   export = Imap;

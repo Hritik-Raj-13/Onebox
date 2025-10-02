@@ -153,6 +153,146 @@ class ImapClient {
   public getAccountName(): string {
     return this.accountName;
   }
+
+  public searchEmailsByDate(boxName: string = 'INBOX', daysBack: number = 30): Promise<number[]> {
+    return new Promise(async (resolve, reject) => {
+      try {
+        if (!this.isConnected) {
+          return reject(new Error('Not connected to IMAP server'));
+        }
+
+        await this.openMailbox(boxName, true);
+
+        const searchDate = new Date();
+        searchDate.setDate(searchDate.getDate() - daysBack);
+        
+        const day = searchDate.getDate();
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                           'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const month = monthNames[searchDate.getMonth()];
+        const year = searchDate.getFullYear();
+        const formattedDate = `${day}-${month}-${year}`;
+
+        console.log(`[${this.accountName}] Searching for emails since ${formattedDate} (last ${daysBack} days)...`);
+
+        this.imap.search([['SINCE', searchDate]], (err: Error | null, results: number[]) => {
+          if (err) {
+            console.error(`[${this.accountName}] Search error:`, err.message);
+            reject(err);
+          } else {
+            console.log(`[${this.accountName}] Found ${results.length} emails from the last ${daysBack} days`);
+            resolve(results);
+          }
+        });
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+
+  
+  public fetchEmails(uids: number[], boxName: string = 'INBOX'): Promise<any[]> {
+    return new Promise(async (resolve, reject) => {
+      try {
+        if (!this.isConnected) {
+          return reject(new Error('Not connected to IMAP server'));
+        }
+
+        if (!uids || uids.length === 0) {
+          console.log(`[${this.accountName}] No emails to fetch`);
+          return resolve([]);
+        }
+
+        // Open the mailbox if not already open
+        await this.openMailbox(boxName, true);
+
+        const emails: any[] = [];
+        
+        // Fetch email headers and body
+        const fetch = this.imap.fetch(uids, {
+          bodies: ['HEADER.FIELDS (FROM TO SUBJECT DATE)', 'TEXT'],
+          struct: true
+        });
+
+        fetch.on('message', (msg: any, seqno: number) => {
+          const emailData: any = {
+            seqno,
+            headers: {},
+            body: ''
+          };
+
+          msg.on('body', (stream: NodeJS.ReadableStream, info: any) => {
+            let buffer = '';
+            stream.on('data', (chunk: Buffer) => {
+              buffer += chunk.toString('utf8');
+            });
+
+            stream.once('end', () => {
+              if (info.which === 'TEXT') {
+                emailData.body = buffer;
+              } else {
+                // Parse headers
+                const lines = buffer.split('\r\n');
+                lines.forEach(line => {
+                  const match = line.match(/^([^:]+):\s*(.+)$/);
+                  if (match && match[1] && match[2]) {
+                    const key = match[1].toLowerCase();
+                    emailData.headers[key] = match[2];
+                  }
+                });
+              }
+            });
+          });
+
+          msg.once('attributes', (attrs: any) => {
+            emailData.attributes = attrs;
+            emailData.uid = attrs.uid;
+          });
+
+          msg.once('end', () => {
+            emails.push(emailData);
+          });
+        });
+
+        fetch.once('error', (err: Error) => {
+          console.error(`[${this.accountName}] Fetch error:`, err.message);
+          reject(err);
+        });
+
+        fetch.once('end', () => {
+          console.log(`[${this.accountName}] Successfully fetched ${emails.length} emails`);
+          resolve(emails);
+        });
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+
+  
+  public async fetchRecentEmails(daysBack: number = 30, boxName: string = 'INBOX'): Promise<any[]> {
+    try {
+      console.log(`[${this.accountName}] Fetching emails from last ${daysBack} days...`);
+      
+      // Search for emails in the date range
+      const uids = await this.searchEmailsByDate(boxName, daysBack);
+      
+      if (uids.length === 0) {
+        console.log(`[${this.accountName}] No emails found in the last ${daysBack} days`);
+        return [];
+      }
+
+      // Fetch the email details
+      const emails = await this.fetchEmails(uids, boxName);
+      
+      return emails;
+    } catch (error) {
+      console.error(`[${this.accountName}] Error fetching recent emails:`, error);
+      throw error;
+    }
+  }
 }
 
 function createImapConfig(accountNumber: number): ImapConfig {
@@ -208,6 +348,39 @@ async function main() {
 
     console.log(`[Account 1] INBOX contains ${inbox1.messages.total} messages`);
     console.log(`[Account 2] INBOX contains ${inbox2.messages.total} messages`);
+
+    // Fetch last 30 days of emails from both accounts
+    console.log('\n' + '='.repeat(60));
+    console.log('Fetching last 30 days of emails from both accounts...');
+    console.log('='.repeat(60) + '\n');
+
+    const [emails1, emails2] = await Promise.all([
+      client1.fetchRecentEmails(30, 'INBOX'),
+      client2.fetchRecentEmails(30, 'INBOX')
+    ]);
+
+    console.log('\n' + '='.repeat(60));
+    console.log('Email Fetch Summary:');
+    console.log('='.repeat(60));
+    console.log(`[Account 1] Retrieved ${emails1.length} emails from the last 30 days`);
+    console.log(`[Account 2] Retrieved ${emails2.length} emails from the last 30 days`);
+
+    // Display sample email details (first email from each account)
+    if (emails1.length > 0) {
+      console.log('\n[Account 1] First Email:');
+      console.log(`  From: ${emails1[0].headers.from || 'N/A'}`);
+      console.log(`  To: ${emails1[0].headers.to || 'N/A'}`);
+      console.log(`  Subject: ${emails1[0].headers.subject || 'N/A'}`);
+      console.log(`  Date: ${emails1[0].headers.date || 'N/A'}`);
+    }
+
+    if (emails2.length > 0) {
+      console.log('\n[Account 2] First Email:');
+      console.log(`  From: ${emails2[0].headers.from || 'N/A'}`);
+      console.log(`  To: ${emails2[0].headers.to || 'N/A'}`);
+      console.log(`  Subject: ${emails2[0].headers.subject || 'N/A'}`);
+      console.log(`  Date: ${emails2[0].headers.date || 'N/A'}`);
+    }
 
     console.log('\n' + '='.repeat(60));
     console.log('Operation completed successfully!');
